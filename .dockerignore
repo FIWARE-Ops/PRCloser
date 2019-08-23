@@ -1,6 +1,5 @@
 .*
-*.json
 *.md
-!config-example.json
+config.json
 LICENSE
 Dockerfile

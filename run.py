@@ -21,6 +21,8 @@ cmd_ignored = ['check_run', 'check_suite', 'commit_comment', 'deployment', 'depl
                'project_column', 'project', 'public', 'push', 'fork', 'pull_request_review_comment', 'create', 'delete',
                'pull_request_review', 'repository', 'watch', 'team_add', 'repository_vulnerability_alert', 'release']
 
+cmd_accepted = ['pull_request']
+
 
 @routes.get('/check')
 async def get_handler(request):
@@ -35,15 +37,15 @@ async def get_handler(request):
                     status = response.status
                     text = loads(await response.text())
             except ClientConnectorError:
-                web.Response(text='Checking' + repository + 'failed due to the connection problem', status=502)
+                web.Response(text='Checking' + repository + 'failed due to the connection problem\n', status=502)
             except TimeoutError:
-                web.Response(text='Checking' + repository + 'failed due to the timeout', status=504)
+                web.Response(text='Checking' + repository + 'failed due to the timeout\n', status=504)
             except Exception as exception:
                 error('check, %s', exception)
                 return web.HTTPInternalServerError()
 
             if status != 200:
-                return web.Response(text='Checking' + repository + 'failed due to the: ' + text['message'],
+                return web.Response(text='Checking' + repository + 'failed due to the: ' + text['message'] + '\n',
                                     status = status)
 
             for item in text:
@@ -58,7 +60,7 @@ async def get_handler(request):
 
 @routes.get('/ping')
 async def get_handler(request):
-    return web.Response(text = 'Pong')
+    return web.Response(text = 'pong\n')
 
 
 @routes.get('/version')
@@ -71,67 +73,76 @@ async def get_handler(request):
     try:
         event = request.headers['X-GitHub-Event']
     except KeyError:
+        error('Bad request, %s', request.headers)
         return web.HTTPBadRequest()
 
-    if event in cmd_ignored or event == 'ping':
+    if event == 'ping':
+        return web.Response(text='pong\n')
+
+    if event in cmd_ignored:
+        return web.Response(text='event in the ignored list\n')
+
+    if event not in cmd_accepted:
+        error('Unknown event, %s', event)
+        return web.Response(text="Unknown event" + event + '\n', status=400)
+
+    data = (await request.read()).decode('UTF-8')
+
+    try:
+        data = loads(data)
+    except ValueError:
+        error('Bad request, %s', data)
+        return web.HTTPBadRequest()
+
+    try:
+        repository = data['repository']['full_name']
+        action = data['action']
+        number = data['number']
+    except ValueError:
+        error('Bad request, %s', data)
+        return web.HTTPBadRequest()
+
+    if not repository or repository not in config['repositories']:
+        return web.Response(text='Repository not found in the config, or not defined\n', status=404)
+
+    if not action or action not in ['opened', 'reopened']:
         return web.HTTPOk()
 
-    if event == 'pull_request':
-        data = (await request.read()).decode('UTF-8')
-
+    async with ClientSession() as session:
+        data = {'body': config['message'],
+                'event': 'COMMENT'}
+        url = api_url + repository + '/pulls/' + str(number) + '/reviews?access_token=' + token
         try:
-            data = loads(data)
-        except ValueError:
-            return web.HTTPBadRequest()
+            async with session.post(url, data=dumps(data), headers=header) as response:
+                status = response.status
+                text = loads(await response.text())
+        except ClientConnectorError:
+            web.Response(text='Adding comment failed due to the connection problem\n', status=502)
+        except TimeoutError:
+            web.Response(text='Adding comment request failed due to the timeout\n', status=504)
+        except Exception as exception:
+            error('close_pull_request, %s', exception)
+            return web.HTTPInternalServerError()
 
+        if status != 200:
+            return web.Response(text="Adding comment failed due to the: " + text['message'] + '\n', status = status)
+
+        data = {'state': 'closed'}
+        url = api_url + repository + '/pulls/' + str(number) + '?access_token=' + token
         try:
-            repository = data['repository']['full_name']
-            action = data['action']
-            number = data['number']
-        except ValueError:
-            return web.HTTPBadRequest()
+            async with session.post(url, data=dumps(data), headers=header) as response:
+                status = response.status
+                text = loads(await response.text())
+        except ClientConnectorError:
+            web.Response(text='Closing PR failed due to the connection problem\n', status=502)
+        except TimeoutError:
+            web.Response(text='Closing PR request failed due to the timeout\n', status=504)
+        except Exception as exception:
+            error('close_pull_request, %s', exception)
+            return web.HTTPInternalServerError()
 
-        if not repository or repository not in config['repositories']:
-            return web.HTTPNoContent()
-
-        if not action or action not in ['opened', 'reopened']:
-            return web.HTTPNoContent()
-
-        async with ClientSession() as session:
-            data = {'body': config['message'],
-                    'event': 'COMMENT'}
-            url = api_url + repository + '/pulls/' + str(number) + '/reviews?access_token=' + token
-            try:
-                async with session.post(url, data=dumps(data), headers=header) as response:
-                    status = response.status
-                    text = loads(await response.text())
-            except ClientConnectorError:
-                web.Response(text='Adding comment failed due to the connection problem', status=502)
-            except TimeoutError:
-                web.Response(text='Adding comment request failed due to the timeout', status=504)
-            except Exception as exception:
-                error('close_pull_request, %s', exception)
-                return web.HTTPInternalServerError()
-
-            if status != 200:
-                return web.Response(text="Adding comment failed due to the: " + text['message'], status = status)
-
-            data = {'state': 'closed'}
-            url = api_url + repository + '/pulls/' + str(number) + '?access_token=' + token
-            try:
-                async with session.post(url, data=dumps(data), headers=header) as response:
-                    status = response.status
-                    text = loads(await response.text())
-            except ClientConnectorError:
-                web.Response(text='Closing PR failed due to the connection problem', status=502)
-            except TimeoutError:
-                web.Response(text='Closing PR request failed due to the timeout', status=504)
-            except Exception as exception:
-                error('close_pull_request, %s', exception)
-                return web.HTTPInternalServerError()
-
-            if status != 200:
-                return web.Response(text="Closing PR failed due to the: " + text['message'], status = status)
+        if status != 200:
+            return web.Response(text="Closing PR failed due to the: " + text['message'] + '\n', status = status)
 
     return web.HTTPOk()
 
@@ -163,7 +174,7 @@ if __name__ == '__main__':
             version_file = f.read().split('\n')
             version['build'] = version_file[0]
             version['commit'] = version_file[1]
-            version = dumps(version)
+            version = dumps(version, indent=4)
     except IndexError:
         error('Unsupported version file type')
         exit(1)
