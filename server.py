@@ -13,21 +13,11 @@ import datetime
 import argparse
 
 
-def get_repo_pair_in_config(repo_param):
-    for repo in config['repositories']:
-        if repo['source'] == repo_param:
-            return repo['target']
-        if repo['target'] == repo_param:
-            return repo['source']
-
-    return False
-
-
 def close_pull_request(target, number):
     url = 'https://api.github.com/repos/' + target + '/pulls/' + number + '/reviews?access_token=' + token_github
 
     data_func = dict()
-    data_func['body'] = config['message']
+    data_func['body'] = def_message
     data_func['event'] = 'COMMENT'
     data_func = jsn.dumps(data_func)
     message = dict()
@@ -37,10 +27,6 @@ def close_pull_request(target, number):
     message['repo'] = target
     response = requests.post(url, data=data_func, headers={'Content-Type': 'application/json'})
     if response.status_code == 200:
-        message['message'] = 'Comment succeeded'
-        message['code'] = 200
-        print(jsn.dumps(message, indent=2))
-
         url = 'https://api.github.com/repos/' + target + '/pulls/' + number + '?access_token=' + token_github
 
         data_func = dict()
@@ -60,26 +46,6 @@ def close_pull_request(target, number):
     return reply, code
 
 
-def targets_check():
-    result = list()
-
-    for repo in config['repositories']:
-        response = requests.get('https://api.github.com/repos/' + repo + '/pulls?access_token=' + token_github)
-        if response.status_code == 200:
-            if response.text:
-                response = jsn.loads(response.text)
-                for i in response:
-                    if i['state'] != 'closed':
-                        result.append(repo)
-        else:
-            result.append('GitHub error')
-
-    if len(result) > 0:
-        return {'message': 'Test failed', 'repos': result}
-    else:
-        return False
-
-
 def parse_request_line(request_line):
     request_line = request_line.split('HTTP')[0].strip()
     method = request_line.split('/')[0].strip()
@@ -97,33 +63,27 @@ def parse_request_line(request_line):
     return False, None
 
 
+def targets_check():
+    result = list()
+
+    for repo in config:
+        response = requests.get('https://api.github.com/repos/' + repo + '/pulls?access_token=' + token_github)
+        if response.status_code == 200:
+            if response.text:
+                response = jsn.loads(response.text)
+                for i in response:
+                    if i['state'] != 'closed':
+                        result.append(repo)
+        else:
+            result.append('GitHub error')
+
+    if len(result) > 0:
+        return {'message': 'Test failed', 'repos': result}
+    else:
+        return False
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
-
-    def reply(self, message=dict(), silent=False, code=200, cmd='', repo=''):
-        self.send_response(code)
-        self.send_header('content-type', 'application/json')
-        self.end_headers()
-        self.wfile.write(bytes(jsn.dumps(message, indent=2) + '\n', 'utf8'))
-
-        if not silent:
-            message['code'] = code
-            if self.headers.get('X-Real-IP'):
-                message['ip'] = self.headers.get('X-Real-IP')
-            else:
-                message['ip'] = self.client_address[0]
-            message['request'] = self.requestline
-            message['date'] = datetime.datetime.now().isoformat()
-            if cmd:
-                message['cmd'] = cmd
-            if repo:
-                message['repo'] = repo
-            if self.headers.get('X-GitHub-Delivery'):
-                message['gh'] = self.headers.get('X-GitHub-Delivery')
-            print(jsn.dumps(message, indent=2))
-        return
-
-    def log_message(self, format, *args):
-        return
 
     def do_POST(self):
         cmd = self.headers.get('X-GitHub-Event')
@@ -179,7 +139,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.reply(message, code=400, cmd=cmd)
             return
 
-        if repo not in config['repositories']:
+        if repo not in config:
             message = {'message': 'Repo not found'}
             self.reply(message, code=404, cmd=cmd, repo=repo)
             return
@@ -233,6 +193,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.reply({'message': 'Test passed'}, cmd=cmd)
             return
 
+    def log_message(self, format, *args):
+        return
+
+    def reply(self, message=None, silent=False, code=200, cmd=None, repo=None):
+        self.send_response(code)
+        self.send_header('content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(bytes(jsn.dumps(message, indent=2) + '\n', 'utf8'))
+
+        if not silent:
+            message['code'] = code
+            if self.headers.get('X-Real-IP'):
+                message['ip'] = self.headers.get('X-Real-IP')
+            else:
+                message['ip'] = self.client_address[0]
+            message['request'] = self.requestline
+            message['date'] = datetime.datetime.now().isoformat()
+            if cmd:
+                message['cmd'] = cmd
+            if repo:
+                message['repo'] = repo
+            if self.headers.get('X-GitHub-Delivery'):
+                message['gh'] = self.headers.get('X-GitHub-Delivery')
+            print(jsn.dumps(message, indent=2))
+        return
+
 
 class Thread(threading.Thread):
     def __init__(self, i):
@@ -257,23 +243,33 @@ if __name__ == '__main__':
     parser.add_argument('--port', dest="port", default=8000, help='port (default: 8000)', action="store")
     parser.add_argument('--config', dest='config_path', default='/opt/config.json',
                         help='path to config file (default: /opt/config.json)',  action="store")
-    parser.add_argument('--user', dest='user', default='Fiware-ops', help='github user (default: Fiware-ops)',
+    parser.add_argument('--user', dest='user', default='fw-ops', help='github user (default: fw-ops)',
                         action="store")
-    parser.add_argument('--email', dest='email', default='test@example.com', help='github user (default: test@example.com)',
+    parser.add_argument('--email', dest='email', default='fiware.bot@gmail.com',
+                        help='github user (default: fiware.bot@gmail.com)',
                         action="store")
-    parser.add_argument('--threads', dest='threads', default=0, help='threads to start (default: len(repos)//2 + 3)',
+    parser.add_argument('--threads', dest='threads', default=2, help='threads to start (default: 2)',
                         action="store")
-    parser.add_argument('--socks', dest='socks', default=0, help='threads to start (default: threads)',  action="store")
+    parser.add_argument('--socks', dest='socks', default=1, help='threads to start (default: 1)',  action="store")
 
     args = parser.parse_args()
 
-    ip = args.ip
-    port = args.port
     user = args.user
     email = args.email
-    threads = args.threads
-    socks = args.socks
     config_path = args.config_path
+
+    address = (args.ip, args.port)
+    version_path = os.path.split(os.path.abspath(__file__))[0] + '/version'
+
+    cmd_get_rl = ['ping', 'config', 'version', 'check']
+    cmd_post_hr = ['ping', 'pull_request']
+    cmd_post_hr_ignored = ['check_run', 'check_suite', 'commit_comment', 'deployment', 'deployment_status', 'status',
+                           'gollum', 'installation', 'installation_repositories', 'issue_comment', 'issues', 'label',
+                           'marketplace_purchase', 'member', 'membership', 'milestone', 'organization', 'org_block',
+                           'page_build', 'project_card', 'project_column', 'project', 'public', 'push', 'fork',
+                           'pull_request_review_comment', 'pull_request_review', 'repository', 'watch', 'team_add',
+                           'repository_vulnerability_alert', 'team', 'create', 'delete', 'release']
+    cmd_post = cmd_post_hr + cmd_post_hr_ignored
 
     if 'TOKEN_GITHUB' in os.environ:
         token_github = os.environ['TOKEN_GITHUB']
@@ -292,58 +288,51 @@ if __name__ == '__main__':
         print(jsn.dumps({'message': 'Config file not found', 'code': 500, 'cmd': 'start'}, indent=2))
         config_file = None
         sys.exit(1)
-
     try:
         with open(config_path) as f:
-            config = jsn.load(f)
+            cfg = jsn.load(f)
     except ValueError:
         print(jsn.dumps({'message': 'Unsupported config type', 'code': 500, 'cmd': 'start'}, indent=2))
         sys.exit(1)
 
-    print(jsn.dumps({'message': 'Checking config', 'code': 200, 'cmd': 'start'}, indent=2))
+    print(jsn.dumps({'message': 'Loading config', 'code': 200, 'cmd': 'start'}, indent=2))
 
-    if 'repositories' not in config:
-        print(jsn.dumps({'message': 'Repositories not defined', 'code': 500, 'cmd': 'start'}, indent=2))
+    config = list()
+    try:
+        def_message = cfg['message']
+        config = cfg['repositories']
+    except KeyError:
+        print(jsn.dumps({'message': 'Config is not correct', 'code': 500, 'cmd': 'start'}, indent=2))
         sys.exit(1)
-    elif len(config['repositories']) == 0:
+
+    if len(config) == 0:
         print(jsn.dumps({'message': 'Repositories list is empty', 'code': 500, 'cmd': 'start'}, indent=2))
         sys.exit(1)
-    if 'message' not in config:
-        print(jsn.dumps({'message': 'Message not defined', 'code': 500, 'cmd': 'start'}, indent=2))
-        sys.exit(1)
 
-    if threads == 0:
-        threads = len(config['repositories'])//2 + 3
-    if socks == 0:
-        socks = threads
-
-    address = (ip, port)
-
-    cmd_get_rl = ['ping', 'config', 'version', 'check']
-    cmd_post_hr = ['ping', 'pull_request']
-    cmd_post_hr_ignored = ['check_run', 'check_suite', 'commit_comment', 'deployment', 'deployment_status', 'status',
-                           'gollum', 'installation', 'installation_repositories', 'issue_comment', 'issues', 'label',
-                           'marketplace_purchase', 'member', 'membership', 'milestone', 'organization', 'org_block',
-                           'page_build', 'project_card', 'project_column', 'project', 'public', 'push', 'fork',
-                           'pull_request_review_comment', 'pull_request_review', 'repository', 'watch', 'team_add',
-                           'repository_vulnerability_alert', 'team', 'create', 'delete', 'release']
-    cmd_post = cmd_post_hr + cmd_post_hr_ignored
-
-    version_file = open(os.path.split(os.path.abspath(__file__))[0] + '/version').read().split('\n')
     version = dict()
-    version['build'] = version_file[0]
-    version['commit'] = version_file[1]
+    if not os.path.isfile(version_path):
+        print(jsn.dumps({'message': 'Version file not found', 'code': 500, 'cmd': 'start'}, indent=2))
+        version_file = None
+        sys.exit(1)
+    try:
+        with open(version_path) as f:
+            version_file = f.read().split('\n')
+            version['build'] = version_file[0]
+            version['commit'] = version_file[1]
+    except IndexError:
+        print(jsn.dumps({'message': 'Unsupported version file type', 'code': 500, 'cmd': 'start'}, indent=2))
+        sys.exit(1)
 
     event = threading.BoundedSemaphore(1)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(address)
-    sock.listen(socks)
+    sock.listen(args.socks)
 
-    [Thread(i) for i in range(threads)]
+    [Thread(i) for i in range(args.threads)]
 
-    print(jsn.dumps({'message': 'Service started', 'code': 200, 'threads': threads, 'socks': socks}, indent=2))
+    print(jsn.dumps({'message': 'Service started', 'code': 200}, indent=2))
 
     while True:
         time.sleep(9999)
