@@ -12,40 +12,31 @@ It works as a service and can receive GitHub notifications as well as direct req
 ## How to run
 ```console
 $ docker run -e TOKEN=${TOKEN} \
-             -e TOKEN_GITHUB=${TOKEN_GITHUB} \
-             -p 0.0.0.0:8000:8000 \
+             -p 0.0.0.0:8080:8080 \
              fiware/service.prcloser \
              --ip 0.0.0.0 \
              --port ${PORT} \
-             --config ${PATH_TO_CONFIG} \
-             --user ${USER} \
-             --email ${EMAIL} \
-             --threads ${THREADS} \
-             --socks ${SOCKS}        
+             --config ${PATH_TO_CONFIG}  
 ```
 ```console
-$ curl http://localhost:8000/ping
+$ curl http://localhost:8080/ping
 ```
 ## How to configure
-+ To comment and close PR at GitHub, you should provide a valid token with an environment variable TOKEN_GITHUB.
++ To comment and close PR at GitHub, you should provide a valid token with an environment variable TOKEN.
 + Sample config is located [here](./config-example.json). 
 
 ## How to use
 Ping
 ```console
-$ curl http://localhost:8000/ping
+$ curl http://localhost:8080/ping
 ```
 Get version
 ```console
-$ curl http://localhost:8000/version
-```
-Get current config
-```console
-$ curl http://localhost:8000/config?token=${TOKEN}
+$ curl http://localhost:8080/version
 ```
 Check opened PR
 ```console
-$ curl http://localhost:8000/check
+$ curl http://localhost:8080/check
 ```
 
 ## GitHub integration

@@ -1,0 +1,6 @@
+.*
+*.json
+*.md
+!config-example.json
+LICENSE
+Dockerfile
