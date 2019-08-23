@@ -2,6 +2,7 @@
 
 # GitHub Pull Request Closer
 [![Docker badge](https://img.shields.io/docker/pulls/fiware/service.prcloser.svg)](https://hub.docker.com/r/fiware/service.prcloser/)
+[![Build Status](https://travis-ci.org/FIWARE-Ops/PRCloser.svg?branch=master)](https://travis-ci.org/FIWARE-Ops/PRCloser)
 
 ## Overview
 This project is part of [FIWARE](https://fiware.org) OPS infrastructure.
