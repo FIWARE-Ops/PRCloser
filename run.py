@@ -19,7 +19,8 @@ cmd_ignored = ['check_run', 'check_suite', 'commit_comment', 'deployment', 'depl
                'installation', 'installation_repositories', 'issue_comment', 'issues', 'label', 'marketplace_purchase',
                'member', 'membership', 'milestone', 'organization', 'org_block', 'page_build', 'project_card', 'team',
                'project_column', 'project', 'public', 'push', 'fork', 'pull_request_review_comment', 'create', 'delete',
-               'pull_request_review', 'repository', 'watch', 'team_add', 'repository_vulnerability_alert', 'release']
+               'pull_request_review', 'repository', 'watch', 'team_add', 'repository_vulnerability_alert', 'release',
+               'deploy_key', 'star']
 
 cmd_accepted = ['pull_request']
 
